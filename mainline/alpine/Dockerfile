@@ -177,6 +177,7 @@ RUN CONFIG="\
 
 FROM alpine:3.7
 RUN apk --no-cache add \
+    bash \
     ca-certificates \
     diffutils \
     geoip \
