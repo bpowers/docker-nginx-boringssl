@@ -1,6 +1,8 @@
-FROM alpine:3.7
+FROM alpine:3.8 as builder
 
-ENV NGINX_VERSION=1.13.12
+MAINTAINER Bobby Powers "bobbypowers@gmail.com"
+
+ENV NGINX_VERSION 1.15.3
 
 RUN GPG_KEYS=B0F4253373F8F6F510D42178520A9993A1C052F8 \
 	&& CONFIG="\
@@ -23,19 +25,12 @@ RUN GPG_KEYS=B0F4253373F8F6F510D42178520A9993A1C052F8 \
 		--with-http_realip_module \
 		--with-http_addition_module \
 		--with-http_sub_module \
-		--with-http_dav_module \
-		--with-http_flv_module \
 		--with-http_mp4_module \
 		--with-http_gunzip_module \
 		--with-http_gzip_static_module \
-		--with-http_random_index_module \
 		--with-http_secure_link_module \
-		--with-http_stub_status_module \
 		--with-http_auth_request_module \
-		--with-http_xslt_module=dynamic \
-		--with-http_image_filter_module=dynamic \
 		--with-http_geoip_module=dynamic \
-		--with-http_perl_module=dynamic \
 		--with-threads \
 		--with-stream \
 		--with-stream_ssl_module \
@@ -43,15 +38,12 @@ RUN GPG_KEYS=B0F4253373F8F6F510D42178520A9993A1C052F8 \
 		--with-stream_realip_module \
 		--with-stream_geoip_module=dynamic \
 		--with-http_slice_module \
-		--with-mail \
-		--with-mail_ssl_module \
 		--with-compat \
 		--with-file-aio \
 		--with-http_v2_module \
 		--with-ipv6 \
 		--with-cc-opt=-I/usr/src/boringssl/.openssl/include \
 		--with-ld-opt=-L/usr/src/boringssl/.openssl/lib \
-		--add-dynamic-module=/usr/src/ngx_headers_more \
 		--add-dynamic-module=/usr/src/ngx_brotli \
 	" \
 	&& addgroup -S nginx \
@@ -76,12 +68,10 @@ RUN GPG_KEYS=B0F4253373F8F6F510D42178520A9993A1C052F8 \
 		libgcc \
 		libstdc++ \
 		libtool \
-		libxslt-dev \
 		linux-headers \
 		make \
 		pcre \
 		pcre-dev \
-		perl-dev \
 		su-exec \
 		tar \
 		tzdata \
@@ -109,7 +99,6 @@ RUN GPG_KEYS=B0F4253373F8F6F510D42178520A9993A1C052F8 \
 		&& cd /usr/src/libbrotli \
 		&& ./autogen.sh && ./configure && make -j$(getconf _NPROCESSORS_ONLN) && make install) \
 	&& git clone --depth=1 --recurse-submodules https://github.com/google/ngx_brotli /usr/src/ngx_brotli \
-	&& git clone --depth=1 https://github.com/openresty/headers-more-nginx-module /usr/src/ngx_headers_more \
 	&& (git clone --depth=1 https://boringssl.googlesource.com/boringssl /usr/src/boringssl \
 		&& sed -i 's@out \([>=]\) TLS1_2_VERSION@out \1 TLS1_3_VERSION@' /usr/src/boringssl/ssl/ssl_lib.cc \
 		&& sed -i 's@ssl->version[ ]*=[ ]*TLS1_2_VERSION@ssl->version = TLS1_3_VERSION@' /usr/src/boringssl/ssl/s3_lib.cc \
@@ -127,15 +116,12 @@ RUN GPG_KEYS=B0F4253373F8F6F510D42178520A9993A1C052F8 \
 	&& tar -zxC /usr/src -f nginx.tar.gz \
 	&& rm nginx.tar.gz \
 	&& cd /usr/src/nginx-$NGINX_VERSION \
-	&& curl -fSL https://cdn.rawgit.com/nginx-modules/ngx_http_tls_dyn_size/556ed42/nginx__dynamic_tls_records_1.13.0%2B.patch -o dynamic_tls_records.patch \
-	&& patch -p1 < dynamic_tls_records.patch \
+	&& curl -fSL https://gist.githubusercontent.com/bpowers/5b7002caac11b56dc9845ccd66b48052/raw/6cc894c432fa8c6267607c99309124413e58fbfc/tls-dynamic-record-resizing.patch -o dynamic_tls_records.patch \
+	&& patch -p1 <dynamic_tls_records.patch \
 	&& ./configure $CONFIG --with-debug \
 	&& make -j$(getconf _NPROCESSORS_ONLN) \
 	&& mv objs/nginx objs/nginx-debug \
-	&& mv objs/ngx_http_xslt_filter_module.so objs/ngx_http_xslt_filter_module-debug.so \
-	&& mv objs/ngx_http_image_filter_module.so objs/ngx_http_image_filter_module-debug.so \
 	&& mv objs/ngx_http_geoip_module.so objs/ngx_http_geoip_module-debug.so \
-	&& mv objs/ngx_http_perl_module.so objs/ngx_http_perl_module-debug.so \
 	&& mv objs/ngx_stream_geoip_module.so objs/ngx_stream_geoip_module-debug.so \
 	&& ./configure $CONFIG \
 	&& make -j$(getconf _NPROCESSORS_ONLN) \
@@ -146,10 +132,7 @@ RUN GPG_KEYS=B0F4253373F8F6F510D42178520A9993A1C052F8 \
 	&& install -m644 html/index.html /usr/share/nginx/html/ \
 	&& install -m644 html/50x.html /usr/share/nginx/html/ \
 	&& install -m755 objs/nginx-debug /usr/sbin/nginx-debug \
-	&& install -m755 objs/ngx_http_xslt_filter_module-debug.so /usr/lib/nginx/modules/ngx_http_xslt_filter_module-debug.so \
-	&& install -m755 objs/ngx_http_image_filter_module-debug.so /usr/lib/nginx/modules/ngx_http_image_filter_module-debug.so \
 	&& install -m755 objs/ngx_http_geoip_module-debug.so /usr/lib/nginx/modules/ngx_http_geoip_module-debug.so \
-	&& install -m755 objs/ngx_http_perl_module-debug.so /usr/lib/nginx/modules/ngx_http_perl_module-debug.so \
 	&& install -m755 objs/ngx_stream_geoip_module-debug.so /usr/lib/nginx/modules/ngx_stream_geoip_module-debug.so \
 	&& ln -s ../../usr/lib/nginx/modules /etc/nginx/modules \
 	&& strip /usr/sbin/nginx* \
@@ -179,6 +162,40 @@ RUN GPG_KEYS=B0F4253373F8F6F510D42178520A9993A1C052F8 \
 	# forward request and error logs to docker log collector
 	&& ln -sf /dev/stdout /var/log/nginx/access.log \
 	&& ln -sf /dev/stderr /var/log/nginx/error.log
+
+
+FROM alpine:3.7
+RUN apk --no-cache add \
+    ca-certificates \
+    diffutils \
+    geoip \
+    pcre \
+    tini \
+    tzdata \
+  && addgroup -S nginx \
+  && adduser -D -S -h /var/cache/nginx -s /sbin/nologin -G nginx nginx
+
+COPY --from=builder \
+  /etc/nginx \
+  /etc/nginx/
+COPY --from=builder \
+  /usr/lib/nginx \
+  /usr/lib/nginx/
+COPY --from=builder \
+  /usr/share/nginx \
+  /usr/share/nginx/
+COPY --from=builder \
+  /var/cache/nginx \
+  /var/cache/nginx/
+COPY --from=builder \
+  /var/log/nginx \
+  /var/log/nginx/
+COPY --from=builder \
+  /usr/sbin/nginx \
+  /usr/sbin/
+COPY --from=builder \
+  /usr/sbin/nginx-debug \
+  /usr/sbin/
 
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY nginx.vh.no-default.conf /etc/nginx/conf.d/default.conf
